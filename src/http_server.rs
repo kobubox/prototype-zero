@@ -40,6 +40,7 @@ impl BlinkConfig {
 #[derive(Debug, Clone)]
 pub enum ServerEvent {
     ConfigUpdated(BlinkConfig),
+    DisplayText(String),
 }
 
 pub struct HttpServer {
@@ -76,6 +77,7 @@ impl HttpServer {
     <h1>ESP32 Blink Control</h1>
     <p>Current period: {period_ms} ms, enabled: {enabled}</p>
 
+    <h2>Blink Settings</h2>
     <form action="/set" method="GET">
       <label>
         Blink period (ms, full cycle):
@@ -88,6 +90,16 @@ impl HttpServer {
       </label>
       <br><br>
       <button type="submit">Apply</button>
+    </form>
+
+    <h2>E-Paper Display</h2>
+    <form action="/display" method="GET">
+      <label>
+        Text to display:
+        <input type="text" name="text" maxlength="100" placeholder="Enter text...">
+      </label>
+      <br><br>
+      <button type="submit">Display</button>
     </form>
   </body>
 </html>
@@ -161,6 +173,42 @@ impl HttpServer {
                     // Emit event
                     if let Ok(mut callback) = event_cb.lock() {
                         callback(ServerEvent::ConfigUpdated(updated_config));
+                    }
+                }
+
+                // Redirect back to root
+                let mut resp = req.into_response(302, Some("Found"), &[("Location", "/")])?;
+                resp.write_all(b"Redirecting...\n")?;
+                Ok(())
+            })?;
+        }
+
+        // /display route: display text on e-paper
+        {
+            let event_cb = event_callback.clone();
+
+            server.fn_handler::<anyhow::Error, _>("/display", Method::Get, move |req| {
+                let uri = req.uri();
+                if let Some(qpos) = uri.find('?') {
+                    let query = &uri[qpos + 1..];
+                    
+                    for pair in query.split('&') {
+                        let mut it = pair.splitn(2, '=');
+                        let key = it.next().unwrap_or("");
+                        let val = it.next().unwrap_or("");
+
+                        if key == "text" {
+                            // URL decode the text (simple implementation)
+                            let text = val.replace("+", " ").replace("%20", " ");
+                            
+                            log::info!("Received display text request: {}", text);
+                            
+                            // Emit event
+                            if let Ok(mut callback) = event_cb.lock() {
+                                callback(ServerEvent::DisplayText(text));
+                            }
+                            break;
+                        }
                     }
                 }
 

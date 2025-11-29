@@ -123,6 +123,12 @@ fn main() -> anyhow::Result<()> {
                 log::error!("Failed to update blink config: {:?}", e);
             }
         }
+        ServerEvent::DisplayText(text) => {
+            info!("Received display text event: {}", text);
+            if let Err(e) = display_handle.submit(DisplayJob::ShowText(text)) {
+                log::error!("Failed to submit display job: {:?}", e);
+            }
+        }
     })?;
 
     info!("HTTP server started");
