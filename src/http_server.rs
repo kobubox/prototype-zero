@@ -47,16 +47,12 @@ pub struct HttpServer {
 }
 
 impl HttpServer {
-    pub fn start<F>(
-        config: BlinkConfig,
-        nvs: EspDefaultNvs,
-        on_event: F,
-    ) -> Result<Self>
+    pub fn start<F>(config: BlinkConfig, nvs: EspDefaultNvs, on_event: F) -> Result<Self>
     where
         F: FnMut(ServerEvent) + Send + 'static,
     {
         let mut server = EspHttpServer::new(&HttpConfig::default())?;
-        
+
         let blink_cfg = Arc::new(Mutex::new(config));
         let nvs_handle = Arc::new(Mutex::new(nvs));
         let event_callback = Arc::new(Mutex::new(on_event));
@@ -111,7 +107,7 @@ impl HttpServer {
             let blink_cfg = blink_cfg.clone();
             let nvs_handle = nvs_handle.clone();
             let event_cb = event_callback.clone();
-            
+
             server.fn_handler::<anyhow::Error, _>("/set", Method::Get, move |req| {
                 let uri = req.uri();
                 if let Some(qpos) = uri.find('?') {
@@ -147,7 +143,7 @@ impl HttpServer {
                         } else {
                             cfg.enabled = false;
                         }
-                        
+
                         log::info!("Updated blink config: {:?}", *cfg);
 
                         // Persist to NVS

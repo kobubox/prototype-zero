@@ -3,7 +3,11 @@ use std::{thread, time::Duration};
 
 use embedded_svc::wifi::{AuthMethod, ClientConfiguration, Configuration};
 
-use esp_idf_hal::{gpio::PinDriver, prelude::*, spi::{config::Config as SpiConfig, SpiDeviceDriver, SpiDriver, SpiDriverConfig}};
+use esp_idf_hal::{
+    gpio::PinDriver,
+    prelude::*,
+    spi::{config::Config as SpiConfig, SpiDeviceDriver, SpiDriver, SpiDriverConfig},
+};
 use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::log::EspLogger;
 use esp_idf_svc::nvs::{EspDefaultNvs, EspDefaultNvsPartition};
@@ -111,14 +115,12 @@ fn main() -> anyhow::Result<()> {
 
     // --- HTTP server with event-driven config updates ---
     let nvs_for_server = EspDefaultNvs::new(nvs_partition_for_server, "blink", true)?;
-    
-    let _server = HttpServer::start(initial_cfg, nvs_for_server, move |event| {
-        match event {
-            ServerEvent::ConfigUpdated(config) => {
-                info!("Received config update event: {:?}", config);
-                if let Err(e) = blink_handle.update_config(config.enabled, config.period_ms) {
-                    log::error!("Failed to update blink config: {:?}", e);
-                }
+
+    let _server = HttpServer::start(initial_cfg, nvs_for_server, move |event| match event {
+        ServerEvent::ConfigUpdated(config) => {
+            info!("Received config update event: {:?}", config);
+            if let Err(e) = blink_handle.update_config(config.enabled, config.period_ms) {
+                log::error!("Failed to update blink config: {:?}", e);
             }
         }
     })?;

@@ -1,6 +1,9 @@
-use std::sync::mpsc::{self, Receiver, Sender};
 use anyhow::Result;
-use esp_idf_hal::{delay::FreeRtos, gpio::{PinDriver, Output}};
+use esp_idf_hal::{
+    delay::FreeRtos,
+    gpio::{Output, PinDriver},
+};
+use std::sync::mpsc::{self, Receiver, Sender};
 
 /// Events that control the blinker
 #[derive(Debug, Clone)]
@@ -16,7 +19,8 @@ pub struct BlinkHandle {
 
 impl BlinkHandle {
     pub fn update_config(&self, enabled: bool, period_ms: u64) -> Result<()> {
-        self.sender.send(BlinkEvent::UpdateConfig { enabled, period_ms })?;
+        self.sender
+            .send(BlinkEvent::UpdateConfig { enabled, period_ms })?;
         Ok(())
     }
 }
@@ -24,7 +28,11 @@ impl BlinkHandle {
 pub struct Blinker;
 
 impl Blinker {
-    pub fn start<P: esp_idf_hal::gpio::Pin>(led: PinDriver<'static, P, Output>, initial_enabled: bool, initial_period_ms: u64) -> Result<BlinkHandle>
+    pub fn start<P: esp_idf_hal::gpio::Pin>(
+        led: PinDriver<'static, P, Output>,
+        initial_enabled: bool,
+        initial_period_ms: u64,
+    ) -> Result<BlinkHandle>
     where
         P: Send + 'static,
     {
@@ -47,13 +55,15 @@ fn run_blinker<P: esp_idf_hal::gpio::Pin>(
     rx: Receiver<BlinkEvent>,
     mut enabled: bool,
     mut period_ms: u64,
-) -> Result<()>
-{
+) -> Result<()> {
     loop {
         // Check for new events (non-blocking)
         while let Ok(event) = rx.try_recv() {
             match event {
-                BlinkEvent::UpdateConfig { enabled: new_enabled, period_ms: new_period } => {
+                BlinkEvent::UpdateConfig {
+                    enabled: new_enabled,
+                    period_ms: new_period,
+                } => {
                     enabled = new_enabled;
                     period_ms = new_period;
                 }
