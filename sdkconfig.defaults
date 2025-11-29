@@ -8,3 +8,16 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=8000
 # Workaround for https://github.com/espressif/esp-idf/issues/7631
 #CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n
 #CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=n
+
+# Enable stack overflow checking
+CONFIG_FREERTOS_WATCHPOINT_END_OF_STACK=y
+
+# Enable more detailed panic output
+CONFIG_ESP_SYSTEM_PANIC_PRINT_HALT=y
+
+# Enable task watchdog for better debugging
+CONFIG_ESP_TASK_WDT_EN=y
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+
+# Enable more heap debugging
+CONFIG_HEAP_POISONING_COMPREHENSIVE=y
