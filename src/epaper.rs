@@ -1,16 +1,16 @@
 use std::sync::mpsc::{self, Receiver, Sender};
 
 use anyhow::Result;
-use embedded_hal::delay::DelayNs;
-use embedded_hal::digital::{InputPin, OutputPin};
-use embedded_hal::spi::SpiDevice;
-use epd_waveshare::epd2in13_v2::{Display2in13, Epd2in13};
-use epd_waveshare::prelude::*;
 use embedded_graphics::{
     mono_font::{ascii::FONT_6X10, MonoTextStyleBuilder},
     prelude::*,
     text::Text,
 };
+use embedded_hal::delay::DelayNs;
+use embedded_hal::digital::{InputPin, OutputPin};
+use embedded_hal::spi::SpiDevice;
+use epd_waveshare::epd2in13_v2::{Display2in13, Epd2in13};
+use epd_waveshare::prelude::*;
 
 /// Delay implementation that works in threads
 pub struct Delay;
@@ -113,53 +113,41 @@ where
     BUSY: InputPin,
     DELAY: DelayNs,
 {
-    // Give the system a moment to fully initialize
-    esp_idf_hal::delay::FreeRtos::delay_ms(100);
-    
-    log::info!("Initializing EPD2in13...");
+    // Initialize EPD hardware (no logging to avoid mutex issues during early startup)
     let mut epd = Epd2in13::new(&mut spi, &mut busy, &mut dc, &mut rst, delay, None)
         .map_err(|e| anyhow::anyhow!("EPD init failed: {:?}", e))?;
-    log::info!("EPD initialized successfully");
 
     loop {
         let job = rx.recv()?;
-        log::info!("Processing display job: {:?}", job);
 
         match job {
             DisplayJob::Clear => {
-                log::info!("Clearing frame...");
                 epd.clear_frame(&mut spi, delay)
                     .map_err(|e| anyhow::anyhow!("Clear frame failed: {:?}", e))?;
-                log::info!("Displaying frame...");
                 epd.display_frame(&mut spi, delay)
                     .map_err(|e| anyhow::anyhow!("Display frame failed: {:?}", e))?;
-                log::info!("Display job complete");
             }
             DisplayJob::ShowText(text) => {
-                log::info!("Rendering text: {}", text);
-                
                 // Create a display buffer
                 let mut display = Display2in13::default();
                 display.set_rotation(DisplayRotation::Rotate90);
                 display.clear(Color::White).ok();
-                
+
                 // Draw text using Color::Black
                 let style = MonoTextStyleBuilder::new()
                     .font(&FONT_6X10)
                     .text_color(Color::Black)
                     .build();
-                    
+
                 Text::new(&text, Point::new(10, 30), style)
                     .draw(&mut display)
                     .ok();
-                
+
                 // Update the display
-                log::info!("Updating display with text...");
                 epd.update_frame(&mut spi, display.buffer(), delay)
                     .map_err(|e| anyhow::anyhow!("Update frame failed: {:?}", e))?;
                 epd.display_frame(&mut spi, delay)
                     .map_err(|e| anyhow::anyhow!("Display frame failed: {:?}", e))?;
-                log::info!("Text display complete");
             }
         }
     }
