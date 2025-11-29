@@ -2,3 +2,5 @@
 /.embuild
 /target
 /Cargo.lock
+.wifi_password
+.wifi_ssid
