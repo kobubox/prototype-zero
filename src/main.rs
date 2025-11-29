@@ -127,10 +127,10 @@ fn main() -> anyhow::Result<()> {
 
     info!("E-Paper display initialized");
 
-    // Clear the display
-    info!("Submitting clear job...");
-    display_handle.submit(DisplayJob::Clear)?;
-    info!("Display clear job submitted");
+    // Show "Hello world" on the display
+    info!("Submitting text job...");
+    display_handle.submit(DisplayJob::ShowText("Hello world".to_string()))?;
+    info!("Display text job submitted");
 
     // ---- NVS: open default partition + "blink" namespace ----
     let nvs_partition = EspDefaultNvsPartition::take()?; // default "nvs" partition
@@ -152,25 +152,27 @@ fn main() -> anyhow::Result<()> {
         let blink_cfg = blink_cfg.clone();
 
         // Move LED driver into the blink thread
-        thread::spawn(move || loop {
-            let (enabled, period) = {
-                let cfg = blink_cfg.lock().unwrap();
-                (cfg.enabled, cfg.period_ms)
-            };
+        std::thread::Builder::new()
+            .stack_size(4096) // 4KB stack for blink thread
+            .spawn(move || loop {
+                let (enabled, period) = {
+                    let cfg = blink_cfg.lock().unwrap();
+                    (cfg.enabled, cfg.period_ms)
+                };
 
-            if enabled {
-                let half = (period / 2).max(10) as u32;
+                if enabled {
+                    let half = (period / 2).max(10) as u32;
 
-                let _ = led.set_high();
-                FreeRtos::delay_ms(half);
+                    let _ = led.set_high();
+                    FreeRtos::delay_ms(half);
 
-                let _ = led.set_low();
-                FreeRtos::delay_ms(half);
-            } else {
-                let _ = led.set_low();
-                FreeRtos::delay_ms(100);
-            }
-        });
+                    let _ = led.set_low();
+                    FreeRtos::delay_ms(half);
+                } else {
+                    let _ = led.set_low();
+                    FreeRtos::delay_ms(100);
+                }
+            })?;
     }
 
     // --- Wi-Fi setup ---

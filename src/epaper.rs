@@ -1,12 +1,16 @@
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::thread;
 
 use anyhow::Result;
 use embedded_hal::delay::DelayNs;
 use embedded_hal::digital::{InputPin, OutputPin};
 use embedded_hal::spi::SpiDevice;
-use epd_waveshare::epd2in13_v2::Epd2in13;
+use epd_waveshare::epd2in13_v2::{Display2in13, Epd2in13};
 use epd_waveshare::prelude::*;
+use embedded_graphics::{
+    mono_font::{ascii::FONT_6X10, MonoTextStyleBuilder},
+    prelude::*,
+    text::Text,
+};
 
 /// Delay implementation that works in threads
 pub struct Delay;
@@ -31,7 +35,7 @@ impl DelayNs for Delay {
 #[derive(Debug)]
 pub enum DisplayJob {
     Clear,
-    // Extend with higher-level jobs as needed, e.g. ShowText(String)
+    ShowText(String),
 }
 
 #[derive(Clone)]
@@ -71,12 +75,15 @@ impl DisplayManager {
         let (tx, rx): (Sender<DisplayJob>, Receiver<DisplayJob>) = mpsc::channel();
 
         // Move ownership of all hardware into the worker thread.
-        thread::spawn(move || {
-            let mut delay = Delay;
-            if let Err(e) = run_worker(spi, cs, dc, rst, busy, &mut delay, rx) {
-                log::error!("EPD worker exited with error: {:?}", e);
-            }
-        });
+        // Use std::thread::Builder to set a larger stack size
+        std::thread::Builder::new()
+            .stack_size(8192) // 8KB stack for the display worker
+            .spawn(move || {
+                let mut delay = Delay;
+                if let Err(e) = run_worker(spi, cs, dc, rst, busy, &mut delay, rx) {
+                    log::error!("EPD worker exited with error: {:?}", e);
+                }
+            })?;
 
         Ok(Self {
             handle: DisplayHandle { sender: tx },
@@ -106,6 +113,9 @@ where
     BUSY: InputPin,
     DELAY: DelayNs,
 {
+    // Give the system a moment to fully initialize
+    esp_idf_hal::delay::FreeRtos::delay_ms(100);
+    
     log::info!("Initializing EPD2in13...");
     let mut epd = Epd2in13::new(&mut spi, &mut busy, &mut dc, &mut rst, delay, None)
         .map_err(|e| anyhow::anyhow!("EPD init failed: {:?}", e))?;
@@ -124,6 +134,32 @@ where
                 epd.display_frame(&mut spi, delay)
                     .map_err(|e| anyhow::anyhow!("Display frame failed: {:?}", e))?;
                 log::info!("Display job complete");
+            }
+            DisplayJob::ShowText(text) => {
+                log::info!("Rendering text: {}", text);
+                
+                // Create a display buffer
+                let mut display = Display2in13::default();
+                display.set_rotation(DisplayRotation::Rotate90);
+                display.clear(Color::White).ok();
+                
+                // Draw text using Color::Black
+                let style = MonoTextStyleBuilder::new()
+                    .font(&FONT_6X10)
+                    .text_color(Color::Black)
+                    .build();
+                    
+                Text::new(&text, Point::new(10, 30), style)
+                    .draw(&mut display)
+                    .ok();
+                
+                // Update the display
+                log::info!("Updating display with text...");
+                epd.update_frame(&mut spi, display.buffer(), delay)
+                    .map_err(|e| anyhow::anyhow!("Update frame failed: {:?}", e))?;
+                epd.display_frame(&mut spi, delay)
+                    .map_err(|e| anyhow::anyhow!("Display frame failed: {:?}", e))?;
+                log::info!("Text display complete");
             }
         }
     }
