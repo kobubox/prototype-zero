@@ -120,6 +120,8 @@ where
     let mut buf = [0u8; 1];
     let mut line: Vec<u8> = Vec::with_capacity(MAX_CODE_LEN);
 
+    //TODO: I don't like the blocking read on UART; consider async or interrupt-driven approach if possible.
+
     loop {
         // Check for control messages (non-blocking)
         if let Ok(msg) = control_rx.try_recv() {
