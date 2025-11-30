@@ -42,6 +42,9 @@ pub enum ServerEvent {
     ConfigUpdated(BlinkConfig),
     DisplayText(String),
     UpdateLine { line_number: u8, text: String },
+    BarcodeTrigger(bool),
+    BarcodeLed(bool),
+    BarcodeBeep(bool),
 }
 
 pub struct HttpServer {
@@ -117,6 +120,22 @@ impl HttpServer {
       <br><br>
       <button type="submit">Update Line</button>
     </form>
+
+    <h2>Barcode Scanner Controls</h2>
+    <form action="/barcode-trigger" method="GET">
+      <button type="submit" name="action" value="on">Trigger ON (Start Scan)</button>
+      <button type="submit" name="action" value="off">Trigger OFF (Stop Scan)</button>
+    </form>
+    <br>
+    <form action="/barcode-led" method="GET">
+      <button type="submit" name="action" value="on">LED ON</button>
+      <button type="submit" name="action" value="off">LED OFF</button>
+    </form>
+    <br>
+    <form action="/barcode-beep" method="GET">
+      <button type="submit" name="action" value="on">Beep ON</button>
+      <button type="submit" name="action" value="off">Beep OFF</button>
+    </form>
   </body>
 </html>
 "#,
@@ -176,7 +195,7 @@ impl HttpServer {
 
                         // Persist to NVS
                         if let Ok(nvs) = nvs_handle.lock() {
-                            if let Err(e) = cfg.save(&*nvs) {
+                            if let Err(e) = cfg.save(&nvs) {
                                 log::warn!("Failed to save config to NVS: {:?}", e);
                             } else {
                                 log::info!("Config saved to NVS");
@@ -274,6 +293,108 @@ impl HttpServer {
                                 line_number: line,
                                 text: txt,
                             });
+                        }
+                    }
+                }
+
+                // Redirect back to root
+                let mut resp = req.into_response(302, Some("Found"), &[("Location", "/")])?;
+                resp.write_all(b"Redirecting...\n")?;
+                Ok(())
+            })?;
+        }
+
+        // /barcode-trigger route: control scanner trigger
+        {
+            let event_cb = event_callback.clone();
+
+            server.fn_handler::<anyhow::Error, _>("/barcode-trigger", Method::Get, move |req| {
+                let uri = req.uri();
+                if let Some(qpos) = uri.find('?') {
+                    let query = &uri[qpos + 1..];
+
+                    for pair in query.split('&') {
+                        let mut it = pair.splitn(2, '=');
+                        let key = it.next().unwrap_or("");
+                        let val = it.next().unwrap_or("");
+
+                        if key == "action" {
+                            let trigger_on = val == "on";
+                            log::info!("Received barcode trigger request: {}", trigger_on);
+
+                            // Emit event
+                            if let Ok(mut callback) = event_cb.lock() {
+                                callback(ServerEvent::BarcodeTrigger(trigger_on));
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                // Redirect back to root
+                let mut resp = req.into_response(302, Some("Found"), &[("Location", "/")])?;
+                resp.write_all(b"Redirecting...\n")?;
+                Ok(())
+            })?;
+        }
+
+        // /barcode-led route: control scanner LED
+        {
+            let event_cb = event_callback.clone();
+
+            server.fn_handler::<anyhow::Error, _>("/barcode-led", Method::Get, move |req| {
+                let uri = req.uri();
+                if let Some(qpos) = uri.find('?') {
+                    let query = &uri[qpos + 1..];
+
+                    for pair in query.split('&') {
+                        let mut it = pair.splitn(2, '=');
+                        let key = it.next().unwrap_or("");
+                        let val = it.next().unwrap_or("");
+
+                        if key == "action" {
+                            let led_on = val == "on";
+                            log::info!("Received barcode LED request: {}", led_on);
+
+                            // Emit event
+                            if let Ok(mut callback) = event_cb.lock() {
+                                callback(ServerEvent::BarcodeLed(led_on));
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                // Redirect back to root
+                let mut resp = req.into_response(302, Some("Found"), &[("Location", "/")])?;
+                resp.write_all(b"Redirecting...\n")?;
+                Ok(())
+            })?;
+        }
+
+        // /barcode-beep route: control scanner beep
+        {
+            let event_cb = event_callback;
+
+            server.fn_handler::<anyhow::Error, _>("/barcode-beep", Method::Get, move |req| {
+                let uri = req.uri();
+                if let Some(qpos) = uri.find('?') {
+                    let query = &uri[qpos + 1..];
+
+                    for pair in query.split('&') {
+                        let mut it = pair.splitn(2, '=');
+                        let key = it.next().unwrap_or("");
+                        let val = it.next().unwrap_or("");
+
+                        if key == "action" {
+                            let beep_on = val == "on";
+                            log::info!("Received barcode beep request: {}", beep_on);
+
+                            // Emit event
+                            if let Ok(mut callback) = event_cb.lock() {
+                                callback(ServerEvent::BarcodeBeep(beep_on));
+                            }
+                            break;
                         }
                     }
                 }

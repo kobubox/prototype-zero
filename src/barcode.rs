@@ -8,9 +8,9 @@ use esp_idf_hal::uart::UartDriver;
 /// Control messages sent to the barcode scanner worker.
 #[derive(Debug, Clone)]
 enum ControlMessage {
-    SetTrigger(bool), // true = active/scan, false = inactive
-    SetLed(bool),     // true = on, false = off
-    SetBeep(bool),    // true = on, false = off
+    Trigger(bool), // true = active/scan, false = inactive
+    Led(bool),     // true = on, false = off
+    Beep(bool),    // true = on, false = off
 }
 
 /// Events produced by the barcode scanner worker.
@@ -33,19 +33,19 @@ impl BarcodeHandle {
     /// Set the trigger pin state.
     /// On GM65, trigger is typically active-low for manual trigger mode.
     pub fn set_trigger(&self, active: bool) -> Result<()> {
-        self.control_tx.send(ControlMessage::SetTrigger(active))?;
+        self.control_tx.send(ControlMessage::Trigger(active))?;
         Ok(())
     }
 
     /// Control the LED pin (on/off).
     pub fn set_led(&self, on: bool) -> Result<()> {
-        self.control_tx.send(ControlMessage::SetLed(on))?;
+        self.control_tx.send(ControlMessage::Led(on))?;
         Ok(())
     }
 
     /// Control the beep pin (on/off).
     pub fn set_beep(&self, on: bool) -> Result<()> {
-        self.control_tx.send(ControlMessage::SetBeep(on))?;
+        self.control_tx.send(ControlMessage::Beep(on))?;
         Ok(())
     }
 }
@@ -124,7 +124,7 @@ where
         // Check for control messages (non-blocking)
         if let Ok(msg) = control_rx.try_recv() {
             match msg {
-                ControlMessage::SetTrigger(active) => {
+                ControlMessage::Trigger(active) => {
                     if let Some(ref mut pin) = trigger {
                         // GM65 trigger is typically active-low
                         if active {
@@ -134,7 +134,7 @@ where
                         }
                     }
                 }
-                ControlMessage::SetLed(on) => {
+                ControlMessage::Led(on) => {
                     if let Some(ref mut pin) = led {
                         if on {
                             pin.set_high().ok();
@@ -143,7 +143,7 @@ where
                         }
                     }
                 }
-                ControlMessage::SetBeep(on) => {
+                ControlMessage::Beep(on) => {
                     if let Some(ref mut pin) = beep {
                         if on {
                             pin.set_high().ok();

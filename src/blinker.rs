@@ -28,14 +28,11 @@ impl BlinkHandle {
 pub struct Blinker;
 
 impl Blinker {
-    pub fn start<P: esp_idf_hal::gpio::Pin>(
+    pub fn start<P: esp_idf_hal::gpio::Pin + Send + 'static>(
         led: PinDriver<'static, P, Output>,
         initial_enabled: bool,
         initial_period_ms: u64,
-    ) -> Result<BlinkHandle>
-    where
-        P: Send + 'static,
-    {
+    ) -> Result<BlinkHandle> {
         let (tx, rx) = mpsc::channel();
 
         std::thread::Builder::new()

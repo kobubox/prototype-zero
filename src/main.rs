@@ -126,7 +126,7 @@ fn main() -> anyhow::Result<()> {
 
     // Start barcode scanner worker
     let display_handle_for_barcode = display_handle.clone();
-    let _barcode_scanner = BarcodeScanner::start(
+    let barcode_scanner = BarcodeScanner::start(
         uart,
         Some(trigger),
         Some(led),
@@ -149,6 +149,7 @@ fn main() -> anyhow::Result<()> {
         },
     )?;
 
+    let barcode_handle = barcode_scanner.handle();
     info!("Barcode scanner started");
 
     // --- Wi-Fi setup ---
@@ -185,6 +186,24 @@ fn main() -> anyhow::Result<()> {
             info!("Received update line {} event: {}", line_number, text);
             if let Err(e) = display_handle.submit(DisplayJob::UpdateLine { line_number, text }) {
                 log::error!("Failed to submit update line job: {:?}", e);
+            }
+        }
+        ServerEvent::BarcodeTrigger(active) => {
+            info!("Received barcode trigger event: {}", active);
+            if let Err(e) = barcode_handle.set_trigger(active) {
+                log::error!("Failed to set barcode trigger: {:?}", e);
+            }
+        }
+        ServerEvent::BarcodeLed(on) => {
+            info!("Received barcode LED event: {}", on);
+            if let Err(e) = barcode_handle.set_led(on) {
+                log::error!("Failed to set barcode LED: {:?}", e);
+            }
+        }
+        ServerEvent::BarcodeBeep(on) => {
+            info!("Received barcode beep event: {}", on);
+            if let Err(e) = barcode_handle.set_beep(on) {
+                log::error!("Failed to set barcode beep: {:?}", e);
             }
         }
     })?;
