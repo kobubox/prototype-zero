@@ -118,28 +118,36 @@ fn main() -> anyhow::Result<()> {
     )?;
     info!("UART driver created for barcode scanner");
 
-    // Optional: Set up control pins for GM65
-    // GPIO25 = TRIG, GPIO26 = LED, GPIO27 = BEEP
-    // (For now we'll just start the scanner in its default manual mode)
+    // Set up control pins for GM65
+    let trigger = PinDriver::output(pins.gpio25)?; // TRIG
+    let led = PinDriver::output(pins.gpio26)?; // LED
+    let beep = PinDriver::output(pins.gpio27)?; // BEEP
+    info!("Barcode scanner control pins configured");
 
     // Start barcode scanner worker
     let display_handle_for_barcode = display_handle.clone();
-    let _barcode_scanner = BarcodeScanner::start(uart, move |event| match event {
-        BarcodeEvent::Scanned(code) => {
-            info!("Scanned barcode: {}", code);
+    let _barcode_scanner = BarcodeScanner::start(
+        uart,
+        Some(trigger),
+        Some(led),
+        Some(beep),
+        move |event| match event {
+            BarcodeEvent::Scanned(code) => {
+                info!("Scanned barcode: {}", code);
 
-            // Display the scanned code on line 0 of the e-paper
-            if let Err(e) = display_handle_for_barcode.submit(DisplayJob::UpdateLine {
-                line_number: 0,
-                text: code,
-            }) {
-                log::error!("Failed to submit barcode display job: {:?}", e);
+                // Display the scanned code on line 0 of the e-paper
+                if let Err(e) = display_handle_for_barcode.submit(DisplayJob::UpdateLine {
+                    line_number: 0,
+                    text: code,
+                }) {
+                    log::error!("Failed to submit barcode display job: {:?}", e);
+                }
             }
-        }
-        BarcodeEvent::Error(err) => {
-            log::warn!("Barcode scanner error: {}", err);
-        }
-    })?;
+            BarcodeEvent::Error(err) => {
+                log::warn!("Barcode scanner error: {}", err);
+            }
+        },
+    )?;
 
     info!("Barcode scanner started");
 
