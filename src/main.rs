@@ -7,6 +7,7 @@ use esp_idf_hal::{
     gpio::PinDriver,
     prelude::*,
     spi::{config::Config as SpiConfig, SpiDeviceDriver, SpiDriver, SpiDriverConfig},
+    uart::{config::Config as UartConfig, UartDriver},
 };
 use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::log::EspLogger;
@@ -18,10 +19,12 @@ use log::info;
 const SSID: &str = include_str!("../.wifi_ssid");
 const PASSWORD: &str = include_str!("../.wifi_password");
 
+mod barcode;
 mod blinker;
 mod epaper;
 mod http_server;
 
+use barcode::{BarcodeEvent, BarcodeScanner};
 use blinker::Blinker;
 use epaper::{DisplayJob, DisplayManager};
 use http_server::{BlinkConfig, HttpServer, ServerEvent};
@@ -98,6 +101,47 @@ fn main() -> anyhow::Result<()> {
     info!("Clearing display...");
     display_handle.submit(DisplayJob::Clear)?;
     info!("Display cleared");
+
+    // --- Barcode Scanner (GM65) Setup ---
+    info!("Setting up barcode scanner...");
+
+    // UART configuration for GM65: 9600 8N1
+    let uart_config = UartConfig::new().baudrate(Hertz(9600));
+
+    let uart = UartDriver::new(
+        peripherals.uart1,
+        pins.gpio17,                               // TX (ESP32 → GM65 RXD)
+        pins.gpio16,                               // RX (GM65 TXD → ESP32)
+        Option::<esp_idf_hal::gpio::Gpio9>::None,  // CTS (unused)
+        Option::<esp_idf_hal::gpio::Gpio10>::None, // RTS (unused)
+        &uart_config,
+    )?;
+    info!("UART driver created for barcode scanner");
+
+    // Optional: Set up control pins for GM65
+    // GPIO25 = TRIG, GPIO26 = LED, GPIO27 = BEEP
+    // (For now we'll just start the scanner in its default manual mode)
+
+    // Start barcode scanner worker
+    let display_handle_for_barcode = display_handle.clone();
+    let _barcode_scanner = BarcodeScanner::start(uart, move |event| match event {
+        BarcodeEvent::Scanned(code) => {
+            info!("Scanned barcode: {}", code);
+
+            // Display the scanned code on line 0 of the e-paper
+            if let Err(e) = display_handle_for_barcode.submit(DisplayJob::UpdateLine {
+                line_number: 0,
+                text: code,
+            }) {
+                log::error!("Failed to submit barcode display job: {:?}", e);
+            }
+        }
+        BarcodeEvent::Error(err) => {
+            log::warn!("Barcode scanner error: {}", err);
+        }
+    })?;
+
+    info!("Barcode scanner started");
 
     // --- Wi-Fi setup ---
     let sys_loop = EspSystemEventLoop::take()?;
