@@ -94,10 +94,10 @@ fn main() -> anyhow::Result<()> {
 
     info!("E-Paper display initialized");
 
-    // Show "Hello world" on the display
-    info!("Submitting text job...");
-    display_handle.submit(DisplayJob::ShowText("Hello world".to_string()))?;
-    info!("Display text job submitted");
+    // Clear the display on startup with a full refresh
+    info!("Clearing display...");
+    display_handle.submit(DisplayJob::Clear)?;
+    info!("Display cleared");
 
     // --- Wi-Fi setup ---
     let sys_loop = EspSystemEventLoop::take()?;
@@ -127,6 +127,12 @@ fn main() -> anyhow::Result<()> {
             info!("Received display text event: {}", text);
             if let Err(e) = display_handle.submit(DisplayJob::ShowText(text)) {
                 log::error!("Failed to submit display job: {:?}", e);
+            }
+        }
+        ServerEvent::UpdateLine { line_number, text } => {
+            info!("Received update line {} event: {}", line_number, text);
+            if let Err(e) = display_handle.submit(DisplayJob::UpdateLine { line_number, text }) {
+                log::error!("Failed to submit update line job: {:?}", e);
             }
         }
     })?;

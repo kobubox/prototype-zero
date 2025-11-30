@@ -1,6 +1,6 @@
 use std::sync::mpsc::{self, Receiver, Sender};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use embedded_graphics::{
     mono_font::{ascii::FONT_6X10, MonoTextStyleBuilder},
     prelude::*,
@@ -36,6 +36,7 @@ impl DelayNs for Delay {
 pub enum DisplayJob {
     Clear,
     ShowText(String),
+    UpdateLine { line_number: u8, text: String },
 }
 
 #[derive(Clone)]
@@ -115,39 +116,107 @@ where
 {
     // Initialize EPD hardware (no logging to avoid mutex issues during early startup)
     let mut epd = Epd2in13::new(&mut spi, &mut busy, &mut dc, &mut rst, delay, None)
-        .map_err(|e| anyhow::anyhow!("EPD init failed: {:?}", e))?;
+        .context("EPD init failed")?;
+
+    // Set to quick refresh mode for partial updates
+    epd.set_refresh(&mut spi, delay, RefreshLut::Quick)
+        .context("Set refresh mode failed")?;
+
+    // Persistent framebuffer to track what's on screen
+    let mut framebuffer = Display2in13::default();
+    framebuffer.set_rotation(DisplayRotation::Rotate90);
+    framebuffer.clear(Color::White).ok();
+
+    // Set initial base buffer for partial updates
+    epd.set_partial_base_buffer(&mut spi, delay, framebuffer.buffer())
+        .context("Set base buffer failed")?;
 
     loop {
         let job = rx.recv()?;
 
         match job {
             DisplayJob::Clear => {
+                // Switch to full refresh mode for proper clear
+                epd.set_refresh(&mut spi, delay, RefreshLut::Full)
+                    .context("Set refresh mode to Full failed")?;
+
+                framebuffer.clear(Color::White).ok();
                 epd.clear_frame(&mut spi, delay)
-                    .map_err(|e| anyhow::anyhow!("Clear frame failed: {:?}", e))?;
+                    .context("Clear frame failed")?;
                 epd.display_frame(&mut spi, delay)
-                    .map_err(|e| anyhow::anyhow!("Display frame failed: {:?}", e))?;
+                    .context("Display frame failed")?;
+
+                // Switch back to quick refresh mode for partial updates
+                epd.set_refresh(&mut spi, delay, RefreshLut::Quick)
+                    .context("Set refresh mode to Quick failed")?;
+
+                // Update base buffer after full refresh
+                epd.set_partial_base_buffer(&mut spi, delay, framebuffer.buffer())
+                    .context("Set base buffer failed after Clear")?;
             }
             DisplayJob::ShowText(text) => {
-                // Create a display buffer
-                let mut display = Display2in13::default();
-                display.set_rotation(DisplayRotation::Rotate90);
-                display.clear(Color::White).ok();
+                // Switch to full refresh mode for complete screen update
+                epd.set_refresh(&mut spi, delay, RefreshLut::Full)
+                    .context("Set refresh mode to Full failed")?;
 
-                // Draw text using Color::Black
+                // Clear framebuffer and draw text
+                framebuffer.clear(Color::White).ok();
+
                 let style = MonoTextStyleBuilder::new()
                     .font(&FONT_6X10)
                     .text_color(Color::Black)
                     .build();
 
                 Text::new(&text, Point::new(10, 30), style)
-                    .draw(&mut display)
+                    .draw(&mut framebuffer)
                     .ok();
 
-                // Update the display
-                epd.update_frame(&mut spi, display.buffer(), delay)
-                    .map_err(|e| anyhow::anyhow!("Update frame failed: {:?}", e))?;
+                // Full refresh
+                epd.update_frame(&mut spi, framebuffer.buffer(), delay)
+                    .context("Update frame failed")?;
                 epd.display_frame(&mut spi, delay)
-                    .map_err(|e| anyhow::anyhow!("Display frame failed: {:?}", e))?;
+                    .context("Display frame failed")?;
+
+                // Switch back to quick refresh mode for partial updates
+                epd.set_refresh(&mut spi, delay, RefreshLut::Quick)
+                    .context("Set refresh mode to Quick failed")?;
+
+                // Update base buffer after full refresh
+                epd.set_partial_base_buffer(&mut spi, delay, framebuffer.buffer())
+                    .context("Set base buffer failed after ShowText")?;
+            }
+            DisplayJob::UpdateLine { line_number, text } => {
+                use embedded_graphics::primitives::Rectangle;
+
+                // Calculate line position
+                let line_height = 12;
+                let y_offset = 10 + (line_number as i32 * line_height);
+
+                // Clear only the specific line region (local update)
+                let clear_rect = Rectangle::new(
+                    Point::new(0, y_offset - 2),
+                    Size::new(122, line_height as u32), // Full width, one line height
+                );
+
+                framebuffer.fill_solid(&clear_rect, Color::White).ok();
+
+                // Draw new text at the line position
+                let style = MonoTextStyleBuilder::new()
+                    .font(&FONT_6X10)
+                    .text_color(Color::Black)
+                    .build();
+
+                Text::new(&text, Point::new(10, y_offset), style)
+                    .draw(&mut framebuffer)
+                    .ok();
+
+                // Quick partial refresh - only updates changed pixels
+                epd.update_and_display_frame(&mut spi, framebuffer.buffer(), delay)
+                    .context("Partial update failed")?;
+
+                // Update the base buffer to keep it in sync
+                epd.set_partial_base_buffer(&mut spi, delay, framebuffer.buffer())
+                    .context("Set base buffer failed after UpdateLine")?;
             }
         }
     }

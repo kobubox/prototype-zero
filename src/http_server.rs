@@ -41,6 +41,7 @@ impl BlinkConfig {
 pub enum ServerEvent {
     ConfigUpdated(BlinkConfig),
     DisplayText(String),
+    UpdateLine { line_number: u8, text: String },
 }
 
 pub struct HttpServer {
@@ -95,11 +96,26 @@ impl HttpServer {
     <h2>E-Paper Display</h2>
     <form action="/display" method="GET">
       <label>
-        Text to display:
+        Text to display (full screen):
         <input type="text" name="text" maxlength="100" placeholder="Enter text...">
       </label>
       <br><br>
       <button type="submit">Display</button>
+    </form>
+
+    <h2>Update Specific Line (Partial Update)</h2>
+    <form action="/update-line" method="GET">
+      <label>
+        Line number (0-9):
+        <input type="number" name="line" min="0" max="9" value="0">
+      </label>
+      <br><br>
+      <label>
+        Text:
+        <input type="text" name="text" maxlength="40" placeholder="Line text...">
+      </label>
+      <br><br>
+      <button type="submit">Update Line</button>
     </form>
   </body>
 </html>
@@ -191,7 +207,7 @@ impl HttpServer {
                 let uri = req.uri();
                 if let Some(qpos) = uri.find('?') {
                     let query = &uri[qpos + 1..];
-                    
+
                     for pair in query.split('&') {
                         let mut it = pair.splitn(2, '=');
                         let key = it.next().unwrap_or("");
@@ -200,14 +216,64 @@ impl HttpServer {
                         if key == "text" {
                             // URL decode the text (simple implementation)
                             let text = val.replace("+", " ").replace("%20", " ");
-                            
+
                             log::info!("Received display text request: {}", text);
-                            
+
                             // Emit event
                             if let Ok(mut callback) = event_cb.lock() {
                                 callback(ServerEvent::DisplayText(text));
                             }
                             break;
+                        }
+                    }
+                }
+
+                // Redirect back to root
+                let mut resp = req.into_response(302, Some("Found"), &[("Location", "/")])?;
+                resp.write_all(b"Redirecting...\n")?;
+                Ok(())
+            })?;
+        }
+
+        // /update-line route: update a specific line on e-paper (partial update)
+        {
+            let event_cb = event_callback.clone();
+
+            server.fn_handler::<anyhow::Error, _>("/update-line", Method::Get, move |req| {
+                let uri = req.uri();
+                if let Some(qpos) = uri.find('?') {
+                    let query = &uri[qpos + 1..];
+                    let mut line_number = None;
+                    let mut text = None;
+
+                    for pair in query.split('&') {
+                        let mut it = pair.splitn(2, '=');
+                        let key = it.next().unwrap_or("");
+                        let val = it.next().unwrap_or("");
+
+                        match key {
+                            "line" => {
+                                if let Ok(n) = val.parse::<u8>() {
+                                    line_number = Some(n.min(9));
+                                }
+                            }
+                            "text" => {
+                                // URL decode the text (simple implementation)
+                                text = Some(val.replace("+", " ").replace("%20", " "));
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    if let (Some(line), Some(txt)) = (line_number, text) {
+                        log::info!("Received update line {} request: {}", line, txt);
+
+                        // Emit event
+                        if let Ok(mut callback) = event_cb.lock() {
+                            callback(ServerEvent::UpdateLine {
+                                line_number: line,
+                                text: txt,
+                            });
                         }
                     }
                 }
